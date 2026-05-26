@@ -1,10 +1,13 @@
-
 # External Dependencies
 import os
 import ee
 import geemap
 import csv
 import datetime
+
+# Start GEE client
+ee.Authenticate()
+ee.Initialize(project="ee-bmcnellis")
 
 # Local Dependencies
 import functions
@@ -17,8 +20,8 @@ fieldnames = [
     "elevation_mean", "elevation_stdDev", "elevation_min", "elevation_max", "elevation_median", "elevation_count",
     "ndvi_mean", "ndvi_stdDev", "ndvi_min", "ndvi_max", "ndvi_median", "ndvi_count"
 ]
-out_file = f"GEE_results/dem_ndvi_summary_{datetime.date.today().strftime('%Y-%m-%d')}.csv"
-partial_dir = "GEE_results/partial"
+out_file = f"../results/dem_ndvi_summary_{datetime.date.today().strftime('%Y-%m-%d')}.csv"
+partial_dir = "../results/partial"
 epsg = "EPSG:4326"
 yrs = range(2012, 2026)
 
@@ -31,10 +34,6 @@ aoi_list = [
     ))
     for row in aoi_df
 ]
-
-# Start GEE client
-ee.Authenticate()
-ee.Initialize()
 
 # Pull GEE data
 for name, aoi in aoi_list:
