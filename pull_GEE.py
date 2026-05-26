@@ -11,7 +11,7 @@ ee.Initialize(project="ee-bmcnellis")
 
 # Local Dependencies
 import functions
-with open("bounding_coordinates_30_sites_20260520.csv", "r", newline="") as f:
+with open("bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
     aoi_df = list(csv.DictReader(f))
 
 # Constants/Inits
@@ -22,13 +22,13 @@ fieldnames = [
 ]
 out_file = f"../results/dem_ndvi_summary_{datetime.date.today().strftime('%Y-%m-%d')}.csv"
 partial_dir = "../results/partial"
-epsg = "EPSG:4326"
+epsg = "EPSG:3577"
 yrs = range(2012, 2026)
 
 # Generate the AOI list from the provided coordinates to iterate over
 aoi_list = [
     (row["site"], ee.Geometry.Rectangle(
-        [float(row["xmin"]), float(row["ymin"]), float(row["xmax"]), float(row["ymax"])],
+        [float(row["xmin_3577"]), float(row["ymin_3577"]), float(row["xmax_3577"]), float(row["ymax_3577"])],
         epsg,
         False,
     ))
