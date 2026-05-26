@@ -61,7 +61,6 @@ def get_ndvi_stats(collection, aoi, years, epsg):
                 .set("year", year).set("month", month)
             ))
 
-    # ONE round-trip for all year/month combinations
     fc_info = ee.FeatureCollection(results).getInfo()
     
     lookup = {}
@@ -83,8 +82,8 @@ def make_dem_row(name, centroid, dem_stats):
         "name":             name,
         "center_lon":       centroid[0],
         "center_lat":       centroid[1],
-        "year":             None,
-        "month":            None,
+        #"year":             None,
+        #"month":            None,
         "dataset":          "AU/GA/AUSTRALIA_5M_DEM",
         "elevation_mean":   dem_stats.get("elevation_mean"),
         "elevation_stdDev": dem_stats.get("elevation_stdDev"),
@@ -92,12 +91,12 @@ def make_dem_row(name, centroid, dem_stats):
         "elevation_max":    dem_stats.get("elevation_max"),
         "elevation_median": dem_stats.get("elevation_median"),
         "elevation_count":  dem_stats.get("elevation_count"),
-        "ndvi_mean":        None,
-        "ndvi_stdDev":      None,
-        "ndvi_min":         None,
-        "ndvi_max":         None,
-        "ndvi_median":      None,
-        "ndvi_count":       None,
+        #"ndvi_mean":        None,
+        #"ndvi_stdDev":      None,
+        #"ndvi_min":         None,
+        #"ndvi_max":         None,
+        #"ndvi_median":      None,
+        #"ndvi_count":       None,
     }
 
 
@@ -109,12 +108,12 @@ def make_ndvi_row(name, centroid, year, month, ndvi):
         "year":             year,
         "month":            month,
         "dataset":          "LANDSAT/COMPOSITES/C02/T1_L2_32DAY_NDVI",
-        "elevation_mean":   None,
-        "elevation_stdDev": None,
-        "elevation_min":    None,
-        "elevation_max":    None,
-        "elevation_median": None,
-        "elevation_count":  None,
+        #"elevation_mean":   None,
+        #"elevation_stdDev": None,
+        #"elevation_min":    None,
+        #"elevation_max":    None,
+        #"elevation_median": None,
+        #"elevation_count":  None,
         "ndvi_mean":        ndvi.get("ndvi_mean"),
         "ndvi_stdDev":      ndvi.get("ndvi_stdDev"),
         "ndvi_min":         ndvi.get("ndvi_min"),
