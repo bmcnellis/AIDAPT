@@ -6,13 +6,21 @@ import datetime
 
 # Defs
 def get_dem_stats(collection, aoi, epsg):
-  
+    
+    # Handle both Image and ImageCollection inputs
+    if isinstance(collection, ee.Image):
+        image = collection.clip(aoi).select("elevation")
+    else:
+        image = (
+            ee.ImageCollection(collection)
+            .filterBounds(aoi)
+            .mosaic()
+            .clip(aoi)
+            .select("elevation")
+        )
+
     return (
-        ee.ImageCollection(collection)
-        .filterBounds(aoi)
-        .mosaic()
-        .clip(aoi)
-        .select("elevation")
+        image
         .reduceRegion(
             reducer=(
                 ee.Reducer.mean()

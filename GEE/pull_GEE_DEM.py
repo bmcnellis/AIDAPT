@@ -11,16 +11,16 @@ ee.Initialize(project="ee-bmcnellis")
 
 # Local Dependencies
 import GEE_functions
-with open("bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
+with open("data/bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
     aoi_df = list(csv.DictReader(f))
 
 # Constants/Inits
-coll = "AU/GA/DEM_1SEC/v10/DEM-S"
+collection = "AU/GA/DEM_1SEC/v10/DEM-S"
 fieldnames = [
     "name", "center_lon", "center_lat", "dataset",
     "elevation_mean", "elevation_stdDev", "elevation_min", "elevation_max", "elevation_median", "elevation_count"
 ]
-out_file = f"../../results/dem_ndvi_summary_{datetime.date.today().strftime('%Y-%m-%d')}.csv"
+out_file = f"../../results/DEM_summary_{datetime.date.today().strftime('%Y-%m-%d')}.csv"
 partial_dir = "../../results/partial"
 epsg = "EPSG:4326"
 
@@ -40,9 +40,9 @@ for name, aoi in aoi_list:
     partial_data = []
     partial_data_file = f"{partial_dir}/{name}_{centroid[0]}_{centroid[1]}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     
-    dem_stats = functions.get_dem_stats(coll, aoi, epsg)
+    dem_stats = GEE_functions.get_dem_stats(collection, aoi, epsg)
 
-    partial_data.append(functions.make_dem_row(name, centroid, dem_stats))
+    partial_data.append(GEE_functions.make_dem_row(name, centroid, dem_stats))
             
     # write the partial datafiles so that the process can be interrupted
     with open(partial_data_file, "w", newline="") as f:
