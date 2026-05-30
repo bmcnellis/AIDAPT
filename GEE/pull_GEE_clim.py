@@ -15,15 +15,11 @@ with open("bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
     aoi_df = list(csv.DictReader(f))
 
 # Constants/Inits
-# fieldnames = [
-#     "name", "center_lon", "center_lat", "year", "month", "dataset",
-#     "elevation_mean", "elevation_stdDev", "elevation_min", "elevation_max", "elevation_median", "elevation_count",
-#     "ndvi_mean", "ndvi_stdDev", "ndvi_min", "ndvi_max", "ndvi_median", "ndvi_count"
-# ]
+# TODO: need fieldnames
 out_file = f"../../results/clim_summary_{datetime.date.today().strftime('%Y-%m-%d')}.csv"
 partial_dir = "../../results/partial"
 epsg = "EPSG:3577"
-yrs = range(2012, 2025)
+yrs = range(2012, 2024)
 
 # Generate the AOI list from the provided coordinates to iterate over
 aoi_list = [

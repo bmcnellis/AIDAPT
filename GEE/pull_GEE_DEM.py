@@ -10,16 +10,14 @@ ee.Authenticate()
 ee.Initialize(project="ee-bmcnellis")
 
 # Local Dependencies
+# should run this script rom the GEE directory
 import GEE_functions
-with open("data/bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
+with open("../data/bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
     aoi_df = list(csv.DictReader(f))
 
 # Constants/Inits
 collection = "AU/GA/DEM_1SEC/v10/DEM-S"
-fieldnames = [
-    "name", "center_lon", "center_lat", "dataset",
-    "elevation_mean", "elevation_stdDev", "elevation_min", "elevation_max", "elevation_median", "elevation_count"
-]
+fieldnames = GEE_functions.make_dem_fields()
 out_file = f"../../results/DEM_summary_{datetime.date.today().strftime('%Y-%m-%d')}.csv"
 partial_dir = "../../results/partial"
 epsg = "EPSG:4326"
