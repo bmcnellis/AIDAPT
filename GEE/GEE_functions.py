@@ -6,7 +6,7 @@ import datetime
 import math
 
 # Defs
-def calc_slp_asp_stats(image: ee.Image, aoi: ee.Geometry, var: str, scale: int = 30) -> dict:
+def calc_slp_asp_stats(image: ee.Image, aoi: ee.Geometry, var: str, scale: int) -> dict:
   
     image_rad = image.multiply(math.pi / 180)
     sin_image = image_rad.sin().rename('sin_image')
@@ -31,7 +31,7 @@ def calc_slp_asp_stats(image: ee.Image, aoi: ee.Geometry, var: str, scale: int =
         f'mean_{var}_deg': mean_var_deg
     }
     
-def get_dem_stats(image: ee.Image, aoi: ee.Geometry, epsg: str, scale: int = 30) -> dict:
+def get_dem_stats(image: ee.Image, aoi: ee.Geometry, epsg: str, scale: int) -> dict:
   
     dem = ee.Image(image).clip(aoi).select('elevation')
         
@@ -54,8 +54,8 @@ def get_dem_stats(image: ee.Image, aoi: ee.Geometry, epsg: str, scale: int = 30)
         maxPixels=int(1e10)
         ).getInfo()
         
-    slp_stats = calc_slp_asp_stats(slp, aoi, 'slope')
-    asp_stats = calc_slp_asp_stats(slp, aoi, 'aspect')
+    slp_stats = calc_slp_asp_stats(slp, aoi, 'slope', 30)
+    asp_stats = calc_slp_asp_stats(slp, aoi, 'aspect', 30)
     
     return {
       **mean_elev,
@@ -63,7 +63,7 @@ def get_dem_stats(image: ee.Image, aoi: ee.Geometry, epsg: str, scale: int = 30)
       **asp_stats
     }
   
-def get_ndvi_stats(collection: ee.ImageCollection, aoi: ee.Geometry, years: list[int], epsg: str) -> dict:
+def get_ndvi_stats(collection: ee.ImageCollection, aoi: ee.Geometry, years: list[int], epsg: str, scale: int) -> dict:
   
     ndvi_collection = ee.ImageCollection(collection).filterBounds(aoi)
     
@@ -90,7 +90,7 @@ def get_ndvi_stats(collection: ee.ImageCollection, aoi: ee.Geometry, years: list
                 .clip(aoi)
             )
             results.append(ee.Feature(None, 
-                image.reduceRegion(reducer, aoi, scale=30, crs=epsg, maxPixels=int(1e9))
+                image.reduceRegion(reducer, aoi, scale=scale, crs=epsg, maxPixels=int(1e10))
                 .set("year", year).set("month", month)
             ))
 
@@ -128,12 +128,12 @@ def make_dem_fields() -> list:
         "aspect_mean_deg":  None
     }.keys())
 
-def make_dem_row(name: str, centroid: list[float], dem_stats: dict) -> dict:
+def make_dem_row(name: str, collection: str, centroid: list[float], dem_stats: dict) -> dict:
     values = [
         name,
         centroid[0],
         centroid[1],
-        "AU/GA/AUSTRALIA_5M_DEM",
+        collection,
         dem_stats.get("elevation_mean"),
         dem_stats.get("elevation_stdDev"),
         dem_stats.get("elevation_min"),
@@ -171,14 +171,14 @@ def make_ndvi_fields() -> list:
         "ndvi_count":  None,
     }.keys())
 
-def make_ndvi_row(name: str, centroid: list[float], year: int, month: int, ndvi: dict) -> dict:
+def make_ndvi_row(name: str, collection: str, centroid: list[float], year: int, month: int, ndvi: dict) -> dict:
     values = [
         name,
         centroid[0],
         centroid[1],
         year,
         month,
-        "LANDSAT/COMPOSITES/C02/T1_L2_32DAY_NDVI",
+        collection,
         ndvi.get("ndvi_mean"),
         ndvi.get("ndvi_stdDev"),
         ndvi.get("ndvi_min"),

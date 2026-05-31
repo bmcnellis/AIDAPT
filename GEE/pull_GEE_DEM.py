@@ -38,9 +38,9 @@ for name, aoi in aoi_list:
     partial_data = []
     partial_data_file = f"{partial_dir}/{name}_{centroid[0]}_{centroid[1]}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     
-    dem_stats = GEE_functions.get_dem_stats(collection, aoi, epsg)
+    dem_stats = GEE_functions.get_dem_stats(collection, aoi, epsg, 30)
 
-    partial_data.append(GEE_functions.make_dem_row(name, centroid, dem_stats))
+    partial_data.append(GEE_functions.make_dem_row(name, collection, centroid, dem_stats))
             
     # write the partial datafiles so that the process can be interrupted
     with open(partial_data_file, "w", newline="") as f:
