@@ -1,0 +1,13 @@
+geopandas>=1.0
+pandas>=2.0
+numpy>=1.26
+pyogrio>=0.9
+shapely>=2.0
+rasterio>=1.3
+scipy>=1.11
+pystac>=1.10
+pystac-client>=0.9
+planetary-computer>=1.0
+odc-stac>=0.5
+dask[array]>=2024.1
+affine>=2.4
