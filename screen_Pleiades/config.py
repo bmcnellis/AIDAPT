@@ -1,4 +1,10 @@
+import re
 from pathlib import Path
+
+# Used by stage1_prepare_inputs.py when merging the per-date footprint shapefiles.
+# If a shapefile has no "date" column, its date is taken from a YYYY-MM-DD folder
+# in its path inside the zip (e.g. 2020-11-05/footprints.shp). Group 2 is the date.
+DATE_PATTERN = re.compile(r"(^|/)(\d{4}-\d{2}-\d{2})(/|$)")
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "inputs"
