@@ -1,10 +1,25 @@
 import re
 from pathlib import Path
 
-# Used by stage1_prepare_inputs.py when merging the per-date footprint shapefiles.
-# If a shapefile has no "date" column, its date is taken from a YYYY-MM-DD folder
-# in its path inside the zip (e.g. 2020-11-05/footprints.shp). Group 2 is the date.
+# Used in: stage0_prepare_inputs.py
+# Used when merging the per-date footprint shapefiles. If a shapefile has no "date" column, 
+# its date is taken from a YYYY-MM-DD folder in its path inside the zip 
+# (e.g. 2020-11-05/footprints.shp). Group 2 is the date.
 DATE_PATTERN = re.compile(r"(^|/)(\d{4}-\d{2}-\d{2})(/|$)")
+
+# Used in: module_landsat_contrast.py
+# Landsat assets read for every scene, named as in the Planetary Computer landsat-c2-l2 collection:
+# "red" and "nir08" are the surface reflectance bands used for NDVI, "qa_pixel" holds the
+# cloud/shadow/snow flags and "qa_radsat" the radiometric saturation flags (any set bit masks
+# the pixel). Used in landsat_contrast.py: requested_landsat_item() skips scenes missing any of
+# them, load_landsat_stack() loads them, and median_ndvi() reads them tile by tile.
+REQUIRED_ASSETS = ("red", "nir08", "qa_pixel", "qa_radsat")
+# Bit mask for the QA_PIXEL flags that make a pixel unusable: bits 0-5 (fill, dilated cloud,
+# cirrus, cloud, cloud shadow, snow). Used in landsat_contrast.py by median_ndvi(), which keeps
+# a pixel only if (qa_pixel & QA_BAD_BITS_0_TO_5) == 0. Missing qa_pixel values are set to this
+# mask, so they count as flagged and are masked out.
+QA_BAD_BITS_0_TO_5 = 0b111111
+
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "inputs"

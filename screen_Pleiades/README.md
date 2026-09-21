@@ -18,8 +18,37 @@ Main settings are in `config.py`.
 
 ### 1. Seasonal selection and Landsat processing
 
-- `stage1_1_process_dates.py`: keep Nov-Feb Pleiades dates. For each date, find Landsat 8 within ±8 days, mask cloud/invalid pixels, calculate NDVI and C30, and keep dates with valid Landsat NDVI in agricultural land.
-- `stage1_2_merge_results.py`: combine retained dates into `candidate_dates.csv`.
+`stage1_1_process_dates.py` screens each Pleiades acquisition date against Landsat imagery, then lists the dates that passed.
+
+Steps:
+
+1. Keep the Pleiades dates from `START_DATE` (inclusive) to `END_DATE` (exclusive) that fall in the Nov-Feb screening season (`SCREENING_SEASON_START_MONTH` to `SCREENING_SEASON_END_MONTH`). Each date gets a `season_year`: the year the season starts, so Jan-Feb dates belong to the previous year's season.
+2. For each date, find Landsat 8 scenes within ±8 days (`LANDSAT_WINDOW_DAYS`) that overlap that date's footprint, clipped to the AOI.
+3. Mask fill, cloud, cloud shadow, cirrus, snow and saturated pixels, then calculate NDVI at 30 m as the per-pixel median across the scenes. NDVI is kept only for agricultural pixels inside the footprint.
+4. Calculate C30 for each pixel: its NDVI minus the median NDVI of the neighbouring pixels within 30 m.
+5. Summarise each 1 km grid cell: the share of its agricultural pixels (inside the footprint) with valid Landsat NDVI, and the share with C30 at or above each threshold in `C30_SENSITIVITY_THRESHOLDS`.
+6. Give each date a status: `OK` if it has valid Landsat NDVI in agricultural land, `NO_SCENES` if no Landsat scene was found, or `NO_VALID_PIXELS` if every pixel was masked.
+7. Merge the results: every `OK` date goes into `candidate_dates.csv`.
+
+Inputs:
+
+- `inputs/AOI_merged.gpkg` and `inputs/pleiades_footprints_merged.gpkg`: from the Setup step.
+- `inputs/CLUM_agri.tif`: agricultural land raster. Pixels equal to `CLUM_VALUE` count as agricultural.
+- Landsat 8 Collection 2 Level-2 (Tier 1) scenes, read on demand from the Microsoft Planetary Computer STAC catalogue, so internet access is required.
+
+Outputs (folders set by `EXPORT_DIR` and `OUTPUT_DIR` in `config.py`):
+
+- `exports_geojson/date_contrast_YYYYMMDD.json`: one per processed date, with `date`, `season_year`, `status`, `message` and `landsat_observations` (number of Landsat scenes found).
+- `exports_geojson/date_spatial_cells_YYYYMMDD.geojson`: only for `OK` dates. One row per 1 km grid cell, with `tile_id` (`T_<x>_<y>`, the cell's lower-left corner in `EPSG:3577`), `valid_coverage_fraction`, and one `c30_<threshold>_area_fraction` column per threshold (e.g. `c30_0p03_area_fraction`). Saved in `EPSG:4326`. Cells with no agricultural pixels are left out.
+- `merged_results/candidate_dates.csv`: `date` and `season_year` for every `OK` date, sorted by date.
+
+Running it:
+
+- Dates that already have a summary JSON are skipped (`RESUME` in `config.py`). `--force` reprocesses them.
+- `--date YYYY-MM-DD` processes a single date, ignoring the season, date-range and index settings.
+- `START_INDEX` and `END_INDEX` in `config.py` limit the run to a slice of the date list, for example to split it into chunks.
+- Dates that raise an error are listed at the end and get no JSON, so the next run retries them.
+- `candidate_dates.csv` is rebuilt at the end of every run from all the JSON files in `exports_geojson/`, so it stays partial until every date has been processed.
 
 ### 2. 1 km tile-date screening
 
