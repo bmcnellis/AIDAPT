@@ -19,6 +19,18 @@ import shapely.geometry
 
 import config
 
+# Functions used from other packages (called below with their full module path, e.g. shapely.make_valid).
+#   geopandas:          GeoDataFrame, GeoSeries, read_file
+#   math:               ceil, floor
+#   numpy:              arange, isfinite
+#   pandas:             DataFrame, concat, read_csv, to_datetime
+#   rasterio:           Env, open
+#   rasterio.features:  geometry_mask
+#   rasterio.windows:   Window, from_bounds
+#   shapely:            make_valid
+#   shapely.geometry:   box, mapping
+
+
 def main():
     # Column written by module_landsat_contrast.summarize_cells() for each C30 threshold,
     # e.g. 0.03 -> "c30_0p03_area_fraction". The names must match what that function writes.
@@ -30,14 +42,24 @@ def main():
 
     # The two sampling designs: the season years a tile must pass in, and the seed for its random order.
     designs = {
-        "six_season": {"years": config.SIX_SEASON_YEARS, "seed": config.SIX_SEASON_SEED},
-        "decade": {"years": config.DECADE_YEARS, "seed": config.DECADE_SEED},
+        "six_season": {
+            "years": config.SIX_SEASON_YEARS,
+            "seed": config.SIX_SEASON_SEED,
+            "eligible_file": config.SIX_SEASON_ELIGIBLE_FILE,
+            "random_order_file": config.SIX_SEASON_RANDOM_ORDER_FILE,
+        },
+        "decade": {
+            "years": config.DECADE_YEARS,
+            "seed": config.DECADE_SEED,
+            "eligible_file": config.DECADE_ELIGIBLE_FILE,
+            "random_order_file": config.DECADE_RANDOM_ORDER_FILE,
+        },
     }
 
     # Step 1: build the tile-date table. For every candidate date, take the 1 km grid cells that touch
     # that date's Pleiades footprint and add: Pleiades coverage, agricultural fraction (from CLUM),
     # and the Landsat coverage and C30 results from stage1_1_process_dates.py.
-    candidates = pandas.read_csv(config.OUTPUT_DIR / "candidate_dates.csv")
+    candidates = pandas.read_csv(config.CANDIDATE_DATES_FILE)
     candidates["date"] = pandas.to_datetime(candidates["date"]).dt.strftime("%Y-%m-%d")
     season_year_by_date = dict(zip(candidates["date"], candidates["season_year"]))
 
@@ -108,7 +130,7 @@ def main():
 
             # Landsat results for this date: valid coverage and the area fraction at each C30 threshold.
             day = date_string.replace("-", "")
-            landsat_cells = geopandas.read_file(config.EXPORT_DIR / f"date_spatial_cells_{day}.geojson")
+            landsat_cells = geopandas.read_file(config.EXPORT_DIR / config.DATE_CELLS_NAME.format(day=day))
             landsat_cells = landsat_cells[
                 ["tile_id", "valid_coverage_fraction", *c30_columns.values()]
             ].rename(columns={"valid_coverage_fraction": "tile_valid_coverage_fraction"})
@@ -132,10 +154,9 @@ def main():
     tiles = geopandas.GeoDataFrame(
         pandas.concat(outputs, ignore_index=True), geometry="geometry", crs=config.GRID_CRS
     )
-    screening_path = config.OUTPUT_DIR / "tile_date_screening.gpkg"
-    if screening_path.exists():
-        screening_path.unlink()
-    tiles.to_file(screening_path, layer="tile_dates", driver="GPKG")
+    if config.TILE_DATE_FILE.exists():
+        config.TILE_DATE_FILE.unlink()
+    tiles.to_file(config.TILE_DATE_FILE, layer=config.TILE_DATE_LAYER, driver="GPKG")
     print(f"Tile-date rows: {len(tiles):,}")
 
     # Step 2: sensitivity. For each design, count the tiles that pass in every season year of the
@@ -161,7 +182,7 @@ def main():
                 })
 
     summary = pandas.DataFrame(summary_rows)
-    summary.to_csv(config.OUTPUT_DIR / "contrast_sensitivity_summary.csv", index=False)
+    summary.to_csv(config.SENSITIVITY_FILE, index=False)
     print(summary.to_string(index=False))
 
     # Step 3: eligible pools. Each tile-season-year is "pass" if any date that season passed,
@@ -183,10 +204,9 @@ def main():
         pool = tiles[tiles["tile_id"].isin(eligible_ids)][["tile_id", "geometry"]]
         pools[design] = pool.drop_duplicates("tile_id").sort_values("tile_id")
 
-        pool_path = config.OUTPUT_DIR / f"{design}_eligible.gpkg"
-        if pool_path.exists():
-            pool_path.unlink()
-        pools[design].to_file(pool_path, layer="tiles", driver="GPKG")
+        if spec["eligible_file"].exists():
+            spec["eligible_file"].unlink()
+        pools[design].to_file(spec["eligible_file"], layer=config.POOL_LAYER, driver="GPKG")
         print(f"{design}: {len(pools[design]):,} eligible tiles")
 
     # Step 4: random orders. Each pool is sorted by tile_id and shuffled with the design's fixed seed,
@@ -196,10 +216,9 @@ def main():
         ordered = ordered.reset_index(drop=True)
         ordered["random_order"] = range(1, len(ordered) + 1)
 
-        order_path = config.OUTPUT_DIR / f"{design}_random_order.gpkg"
-        if order_path.exists():
-            order_path.unlink()
-        ordered.to_file(order_path, layer="tiles", driver="GPKG")
+        if spec["random_order_file"].exists():
+            spec["random_order_file"].unlink()
+        ordered.to_file(spec["random_order_file"], layer=config.POOL_LAYER, driver="GPKG")
         print(f"{design}: random order saved (seed {spec['seed']})")
 
 

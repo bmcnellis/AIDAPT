@@ -7,17 +7,22 @@ import pandas
 
 import config
 
+# Functions used from other packages (called below with their full module path, e.g. pandas.concat).
+#   geopandas:  read_file
+#   pandas:     Timestamp, concat, to_datetime
+
+
 def main():
-    # The two sampling designs and the season years each one needs. The random order of each design
-    # comes from stage1_2_tile_screening.py (<design>_random_order.gpkg).
+    # The two sampling designs: the season years each one needs, and the file with its random order
+    # (written by stage1_2_tile_screening.py).
     designs = {
-        "six_season": config.SIX_SEASON_YEARS,
-        "decade": config.DECADE_YEARS,
+        "six_season": {"years": config.SIX_SEASON_YEARS, "random_order_file": config.SIX_SEASON_RANDOM_ORDER_FILE},
+        "decade": {"years": config.DECADE_YEARS, "random_order_file": config.DECADE_RANDOM_ORDER_FILE},
     }
 
     tile_dates = geopandas.read_file(
-        config.OUTPUT_DIR / "tile_date_screening.gpkg",
-        layer="tile_dates",
+        config.TILE_DATE_FILE,
+        layer=config.TILE_DATE_LAYER,
         ignore_geometry=True,
     )
     tile_dates["tile_id"] = tile_dates["tile_id"].astype(str)
@@ -26,10 +31,11 @@ def main():
     # order. Within each tile-season-year the dates are ordered by distance from the middle of the
     # screening season, so date_order 1 is the preferred date.
     design_reviews = []
-    for design, years in designs.items():
+    for design, spec in designs.items():
+        years = spec["years"]
         random_order = geopandas.read_file(
-            config.OUTPUT_DIR / f"{design}_random_order.gpkg",
-            layer="tiles",
+            spec["random_order_file"],
+            layer=config.POOL_LAYER,
             ignore_geometry=True,
         )
         order = random_order.set_index("tile_id")["random_order"]
@@ -79,12 +85,10 @@ def main():
     ):
         review[column] = ""
 
-    out_dir = config.OUTPUT_DIR / "imagery_selection"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / "airbus_metadata_review.csv"
-    review.to_csv(out, index=False)
+    config.IMAGERY_SELECTION_DIR.mkdir(parents=True, exist_ok=True)
+    review.to_csv(config.AIRBUS_REVIEW_FILE, index=False)
     print(f"Candidate acquisition rows: {len(review):,}")
-    print(f"Fill in: {out}")
+    print(f"Fill in: {config.AIRBUS_REVIEW_FILE}")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,14 @@ import module_landsat_contrast
 #   load_inputs
 #   summarize_cells
 
+# Functions used from other packages (called below with their full module path, e.g. pandas.Timestamp).
+#   argparse:            ArgumentParser
+#   json:                dumps, loads
+#   pandas:              DataFrame, Timestamp
+#   planetary_computer:  sign_inplace
+#   pystac_client:       Client.open
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--date")
@@ -63,8 +71,8 @@ def main():
 
     for index, date_string in enumerate(dates, start=1):
         day = date_string.replace("-", "")
-        json_path = config.EXPORT_DIR / f"date_contrast_{day}.json"
-        cells_path = config.EXPORT_DIR / f"date_spatial_cells_{day}.geojson"
+        json_path = config.EXPORT_DIR / config.DATE_SUMMARY_NAME.format(day=day)
+        cells_path = config.EXPORT_DIR / config.DATE_CELLS_NAME.format(day=day)
         if config.RESUME and not args.force and json_path.exists():
             print(f"[{index}/{len(dates)}] {date_string}: skip")
             continue
@@ -102,14 +110,14 @@ def main():
     # Merge: dates with usable Landsat become candidate_dates.csv (all dates processed so far).
     rows = [
         json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(config.EXPORT_DIR.glob("date_contrast_*.json"))
+        for path in sorted(config.EXPORT_DIR.glob(config.DATE_SUMMARY_NAME.format(day="*")))
     ]
     results = pandas.DataFrame(rows)
     candidates = results[results["status"].eq("OK")][["date", "season_year"]]
     candidates = candidates.sort_values("date").drop_duplicates()
 
     config.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    candidates.to_csv(config.OUTPUT_DIR / "candidate_dates.csv", index=False)
+    candidates.to_csv(config.CANDIDATE_DATES_FILE, index=False)
     print(f"Candidate dates: {len(candidates):,}")
 
 

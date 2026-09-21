@@ -12,11 +12,21 @@ import shapely
 
 import config
 
+# Functions used from other packages (called below with their full module path, e.g. shapely.make_valid).
+#   argparse:    ArgumentParser
+#   geopandas:   GeoDataFrame, read_file
+#   pandas:      concat, to_datetime
+#   pathlib:     Path
+#   shapely:     make_valid
+#   tempfile:    TemporaryDirectory
+#   zipfile:     ZipFile
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--aoi-zip", type=pathlib.Path, default=pathlib.Path("AOI.zip"),
+    parser.add_argument("--aoi-zip", type=pathlib.Path, default=config.AOI_ZIP,
                         help="zip of AOI shapefiles")
-    parser.add_argument("--footprints-zip", type=pathlib.Path, default=pathlib.Path("per_date_shapefiles.zip"),
+    parser.add_argument("--footprints-zip", type=pathlib.Path, default=config.FOOTPRINTS_ZIP,
                         help="zip of dated Pleiades footprint shapefiles")
     parser.add_argument("--output-dir", type=pathlib.Path, default=config.INPUT_DIR,
                         help="folder the GeoPackages are written to (default: INPUT_DIR in config.py)")
@@ -25,8 +35,8 @@ def main():
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    aoi_output = args.output_dir / "AOI_merged.gpkg"
-    footprints_output = args.output_dir / "pleiades_footprints_merged.gpkg"
+    aoi_output = args.output_dir / config.AOI_FILE.name
+    footprints_output = args.output_dir / config.FOOTPRINTS_FILE.name
 
     # AOI: union all shapefile geometries into a single valid polygon.
     with tempfile.TemporaryDirectory() as tmp:
@@ -43,7 +53,7 @@ def main():
     aoi = geopandas.GeoDataFrame([{"name": "AOI", "geometry": aoi_geometry}], crs=args.crs)
 
     aoi_output.unlink(missing_ok=True)
-    aoi.to_file(aoi_output, layer="aoi", driver="GPKG")
+    aoi.to_file(aoi_output, layer=config.AOI_LAYER, driver="GPKG")
     print(f"Wrote {aoi_output}")
 
     # Footprints: stack all shapefiles, taking each date from a "date" column
@@ -74,7 +84,7 @@ def main():
     footprints = pandas.concat(footprint_parts, ignore_index=True).sort_values("date", ignore_index=True)
 
     footprints_output.unlink(missing_ok=True)
-    footprints.to_file(footprints_output, layer="footprints", driver="GPKG")
+    footprints.to_file(footprints_output, layer=config.FOOTPRINTS_LAYER, driver="GPKG")
     print(f"Dates: {footprints['date'].nunique():,}")
     print(f"Wrote {footprints_output}")
 

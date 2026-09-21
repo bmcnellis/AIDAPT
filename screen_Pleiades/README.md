@@ -2,7 +2,7 @@
 
 This pipeline screens Pleiades acquisition dates and 1 km tiles using Landsat NDVI contrast, draws a fixed random order of eligible tiles, and selects one Airbus Pleiades acquisition per tile-season-year to download for tree detection.
 
-Every threshold, path and date range is set in `config.py`, which is organised by topic and says which script reads each setting.
+Every threshold, folder, file name and date range is set in `config.py`, which is organised by topic and says which script reads each setting. The paths shown in this README are the defaults from `config.py`.
 
 ## Pipeline at a glance
 
@@ -14,6 +14,8 @@ Every threshold, path and date range is set in `config.py`, which is organised b
 | Stage 2, step 1 | `stage2_1_prepare_imagery.py` | Order the candidate dates and write the Airbus metadata review table | `merged_results/imagery_selection/airbus_metadata_review.csv` |
 | Manual review | | Fill in the Airbus metadata by hand | |
 | Stage 2, step 2 | `stage2_2_select_imagery.py` | Choose one Airbus acquisition per final tile-season-year | `merged_results/imagery_selection/selected_imagery.csv` and `.gpkg` |
+| Tree detection | | Detect trees in the downloaded imagery (outside this pipeline) | `merged_results/tree_detection/tree_observations.csv`, `tree_locations.gpkg` |
+| Analysis | `analysis_output.py` | Collate the tree results and write a PDF summary of the whole workflow | `merged_results/analysis/analysis_tree_observations.csv`, `analysis_spatial.gpkg`, `pleiades_screening_summary.pdf` |
 
 `module_landsat_contrast.py` holds the input loading, Landsat search, NDVI, C30 and cell-summary functions called by `stage1_1_process_dates.py`. It is not run directly.
 
@@ -26,12 +28,14 @@ python stage1_2_tile_screening.py
 python stage2_1_prepare_imagery.py
 # fill in merged_results/imagery_selection/airbus_metadata_review.csv by hand
 python stage2_2_select_imagery.py
+# download the imagery, run tree detection, and place its outputs in merged_results/tree_detection/
+python analysis_output.py
 ```
 
 ## Requirements
 
 - Python 3.10 or newer.
-- `geopandas` 1.0 or newer (for `union_all`), `shapely` 2.x, `pandas`, `numpy`, `scipy`, `rasterio`, `affine`, `pystac`, `pystac-client`, `planetary-computer` and `odc-stac`. `odc-stac` loads Landsat as dask-backed xarray arrays, so `xarray` and `dask` must also be installed (`odc-stac` normally brings them in).
+- `geopandas` 1.0 or newer (for `union_all`), `shapely` 2.x, `pandas`, `numpy`, `scipy`, `rasterio`, `affine`, `pystac`, `pystac-client`, `planetary-computer` and `odc-stac`. `analysis_output.py` also needs `reportlab`, to write the summary PDF. `odc-stac` loads Landsat as dask-backed xarray arrays, so `xarray` and `dask` must also be installed (`odc-stac` normally brings them in).
 - Internet access for `stage1_1_process_dates.py`, which reads Landsat on demand from the Microsoft Planetary Computer.
 - The agricultural land raster `inputs/CLUM_agri.tif`. The pipeline does not create it, so place it there yourself.
 
@@ -39,14 +43,16 @@ python stage2_2_select_imagery.py
 
 | Section | What it controls |
 |---|---|
-| 1. Folders | `INPUT_DIR`, `EXPORT_DIR`, `OUTPUT_DIR` |
-| 2. Input files | AOI, footprint and CLUM files and layers, the date column, and how CLUM is read (`CLUM_VALUE`, `CLUM_GEOREF_SOURCES`) |
+| 1. Folders | `INPUT_DIR`, `EXPORT_DIR`, `OUTPUT_DIR` and its subfolders for the imagery selection, tree detection and analysis |
+| 2. Input and output files | Every file the pipeline reads or writes, grouped by stage: the raw zips, AOI, footprint and CLUM files, the per-date file names, the tile tables, pools and random orders, the Airbus review and selected imagery, the tree detection inputs and the analysis outputs. Also the GeoPackage layer names shared between scripts, the date column, and how CLUM is read (`CLUM_VALUE`, `CLUM_GEOREF_SOURCES`) |
 | 3. Study period and season | `START_DATE`, `END_DATE`, and the Nov-Feb screening season |
 | 4. Grid and coordinate system | `GRID_CRS`, `SCALE_M` (Landsat pixel size), `GRID_SIZE_M` (tile size) |
 | 5. Landsat scenes and NDVI | Scene search window and filters, required assets, reflectance scaling, QA mask |
 | 6. C30 and tile screening thresholds | The contrast radius, the C30 thresholds, and the coverage and agricultural cut-offs |
 | 7. Sampling designs | Season years, tile counts and random seeds for the two designs |
 | 8. Runtime and performance | Threads, block size, retries, and the resume and slice options of `stage1_1_process_dates.py` |
+
+`analysis_output.py` reports the main settings from sections 3 to 7 in its summary PDF.
 
 ## Stage 0: Setup
 
@@ -59,12 +65,12 @@ Options (all optional):
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--aoi-zip` | `AOI.zip` | Zip of AOI shapefiles |
-| `--footprints-zip` | `per_date_shapefiles.zip` | Zip of dated footprint shapefiles |
+| `--aoi-zip` | `AOI_ZIP` from `config.py` (`AOI.zip`, in the folder you run the script from) | Zip of AOI shapefiles |
+| `--footprints-zip` | `FOOTPRINTS_ZIP` from `config.py` (`per_date_shapefiles.zip`, in the folder you run the script from) | Zip of dated footprint shapefiles |
 | `--output-dir` | `INPUT_DIR` from `config.py` (`inputs/`) | Where the GeoPackages are written |
 | `--crs` | `GRID_CRS` from `config.py` (`EPSG:3577`) | CRS the GeoPackages are stored in |
 
-The file and layer names are fixed in the script and must match `AOI_FILE`, `AOI_LAYER`, `FOOTPRINTS_FILE` and `FOOTPRINTS_LAYER` in `config.py`. If you pass a different `--crs`, later steps still reproject to `GRID_CRS`, so it only affects how the GeoPackages are stored.
+The GeoPackages are written with the file names and layer names in `AOI_FILE`, `AOI_LAYER`, `FOOTPRINTS_FILE` and `FOOTPRINTS_LAYER` in `config.py`, which later steps also read. If you pass a different `--crs`, later steps still reproject to `GRID_CRS`, so it only affects how the GeoPackages are stored.
 
 ## Stage 1: Footprint screening
 
@@ -190,18 +196,43 @@ merged_results/                  OUTPUT_DIR
     airbus_metadata_review.csv     Stage 2, step 1 (then filled in by hand)
     selected_imagery.csv           Stage 2, step 2
     selected_imagery.gpkg
+  tree_detection/                  from tree detection (outside this pipeline)
+    tree_observations.csv
+    tree_locations.gpkg
+  analysis/                        analysis_output.py
+    analysis_tree_observations.csv
+    analysis_spatial.gpkg
+    pleiades_screening_summary.pdf
 ```
 
-## Tree outputs
+## Tree detection outputs
 
-These sections describe the steps after imagery download. They are not part of the scripts above.
+Tree detection is done outside this pipeline, on the downloaded imagery. `analysis_output.py` expects its results at `TREE_OBSERVATIONS_FILE` and `TREE_LOCATIONS_FILE` in `config.py` (by default in `merged_results/tree_detection/`):
 
-- `tree_locations.gpkg`: one stable `tree_id` and location for each tree.
+- `tree_locations.gpkg` (layer `trees`): one stable `tree_id` and location for each tree, with `tile_id`.
 - `tree_observations.csv`: one row per tree per season-year, with columns `tile_id`, `season_year`, `tree_id`, `detected`.
 
 ## Analysis
 
-`analysis_output.py` creates:
+`analysis_output.py` collates the final results. It takes no options and overwrites its outputs on every run. Run it after every earlier stage and after the tree detection results are in place. If any file it reads is missing, it stops at the start and lists them all.
 
-- `analysis_tree_observations.csv`
-- `analysis_spatial.gpkg`
+It reads the tree detection outputs above, plus the outputs of every earlier stage (for the summary), and writes to `merged_results/analysis/`:
+
+- `analysis_tree_observations.csv`: the tree observations (`tile_id`, `season_year`, `tree_id`, `detected`), sorted by `tile_id`, `tree_id`, `season_year`, followed by `sample_component` and `acquisition_date` taken from `selected_imagery.csv`.
+- `analysis_spatial.gpkg`: layer `tree_locations` (every tree location) and layer `tree_observations` (each observation, with the same columns as the CSV, joined to its tree location; observations with no matching location are left out).
+- `pleiades_screening_summary.pdf`: a summary of the whole workflow (see below).
+
+`tile_id` and `season_year` remain the link between a tree observation and its imagery: together they identify exactly one selected acquisition, and the two added columns only repeat what `selected_imagery.csv` holds for that pair. Every observation appears once. An observation whose tile-season-year has no selected imagery keeps blank values in both columns, and is counted in the data checks below. If `selected_imagery.csv` ever listed one tile-season-year twice, the script stops with an error instead of duplicating observations.
+
+The PDF contains:
+
+1. Headline numbers: dates screened, tiles screened, tile-season-years passing, eligible tiles, tiles and acquisitions selected, season years included, and tree counts.
+2. Date screening by season year (Stage 1, step 1) and tile-season-year outcomes (Stage 1, step 2).
+3. Threshold sensitivity tables for each design.
+4. The Airbus metadata review and the selected imagery: tiles selected against the targets, acquisitions by season year, and the status of the visual check.
+5. Tree detection results by season year.
+6. Data checks, each normally zero: tree observations outside the selected tile-season-years, observations with no tree location, tree locations with no observations, and selected tile-season-years with no tree observations. Non-zero counts are also printed when the script runs.
+7. The main settings from `config.py`.
+8. Every input needed to run the analysis and every output, including intermediate products, with its location and whether it was found on disk.
+
+The numbers come from the files on disk when the script runs. The input and output lists are written in the script itself (the `manifest` list in `analysis_output.py`), so update them if the pipeline gains or loses a file.
