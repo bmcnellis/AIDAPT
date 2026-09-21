@@ -22,16 +22,6 @@ import reportlab.platypus
 
 import config
 
-# Functions used from other packages (called below with their full module path, e.g. pandas.crosstab).
-#   datetime:                 datetime.now
-#   geopandas:                GeoDataFrame, read_file
-#   html:                     escape
-#   json:                     loads
-#   pandas:                   MultiIndex.from_frame, crosstab, read_csv, to_numeric, DataFrame
-#   reportlab.lib.colors:     HexColor
-#   reportlab.lib.pagesizes:  A4
-#   reportlab.lib.styles:     ParagraphStyle, getSampleStyleSheet
-#   reportlab.platypus:       Paragraph, SimpleDocTemplate, Table, TableStyle
 # Constants: reportlab.lib.units.cm, reportlab.lib.enums.TA_RIGHT
 
 

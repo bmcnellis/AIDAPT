@@ -12,16 +12,6 @@ import shapely
 
 import config
 
-# Functions used from other packages (called below with their full module path, e.g. shapely.make_valid).
-#   argparse:    ArgumentParser
-#   geopandas:   GeoDataFrame, read_file
-#   pandas:      concat, to_datetime
-#   pathlib:     Path
-#   shapely:     make_valid
-#   tempfile:    TemporaryDirectory
-#   zipfile:     ZipFile
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--aoi-zip", type=pathlib.Path, default=config.AOI_ZIP,

@@ -7,11 +7,6 @@ import pandas
 
 import config
 
-# Functions used from other packages (called below with their full module path, e.g. pandas.concat).
-#   geopandas:  GeoDataFrame, read_file
-#   pandas:     concat, read_csv, to_numeric
-
-
 def main():
     # The two sampling designs: the season years a tile must have imagery for, how many tiles to take,
     # the sample_component label used in the outputs, the label used in the printed summary, and the

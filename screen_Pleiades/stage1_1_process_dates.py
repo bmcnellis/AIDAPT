@@ -18,14 +18,6 @@ import module_landsat_contrast
 #   load_inputs
 #   summarize_cells
 
-# Functions used from other packages (called below with their full module path, e.g. pandas.Timestamp).
-#   argparse:            ArgumentParser
-#   json:                dumps, loads
-#   pandas:              DataFrame, Timestamp
-#   planetary_computer:  sign_inplace
-#   pystac_client:       Client.open
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--date")
