@@ -6,19 +6,17 @@ import argparse
 import json
 
 import pandas
+import planetary_computer
+import pystac_client
 
 import config
 import module_landsat_contrast
 
 # Functions used from module_landsat_contrast (called below as module_landsat_contrast.<name>).
-#   acquisition_dates
 #   compute_date
 #   geometry_for_date
 #   load_inputs
-#   open_catalog
 #   summarize_cells
-#   write_geojson
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -29,7 +27,12 @@ def main():
     start_month = config.SCREENING_SEASON_START_MONTH
     end_month = config.SCREENING_SEASON_END_MONTH
     inputs = module_landsat_contrast.load_inputs()
-    dates = [args.date] if args.date else module_landsat_contrast.acquisition_dates(inputs)
+    if args.date:
+        dates = [args.date]
+    else:
+        # Pleiades dates (that have a footprint inside the AOI) from START_DATE up to END_DATE (exclusive).
+        dates = sorted(inputs.footprints[config.DATE_FIELD].dropna().astype(str).unique())
+        dates = [d for d in dates if config.START_DATE <= d < config.END_DATE]
 
     # Season year of each date, or None if it falls outside the screening season. A season that
     # spans new year (e.g. Nov-Feb) is labelled by the year it starts in, so Jan-Feb dates
@@ -55,7 +58,7 @@ def main():
 
     # Process each date: one summary JSON, plus a GeoJSON of tile cells if Landsat was usable.
     config.EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-    catalog = module_landsat_contrast.open_catalog()
+    catalog = pystac_client.Client.open(config.STAC_URL, modifier=planetary_computer.sign_inplace)
     failed = []
 
     for index, date_string in enumerate(dates, start=1):
@@ -87,7 +90,7 @@ def main():
                 )
             json_path.write_text(json.dumps(row, indent=2), encoding="utf-8")
             if cells is not None:
-                module_landsat_contrast.write_geojson(cells, cells_path)
+                cells.to_crs("EPSG:4326").to_file(cells_path, driver="GeoJSON")
             print(f"  {row['status']}")
         except Exception as error:
             failed.append(date_string)

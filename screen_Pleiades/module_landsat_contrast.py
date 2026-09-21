@@ -1,57 +1,89 @@
-# Landsat NDVI and local C30 calculations.
+# Landsat NDVI and local contrast (C30) calculations for the Pleiades screening pipeline.
+#
+# Called from stage1_1_process_dates.py:
+#   load_inputs, geometry_for_date, compute_date, summarize_cells
+# Called only from within this module:
+#   search_landsat, load_clum_source, clum_mask, median_ndvi, nanmedian, local_contrast
+#
+# Settings (dates, thresholds, file paths, ...) come from config.py.
 
+import dataclasses
+import datetime
+import functools
 import math
+import pathlib
 import re
 import time
 import warnings
-from dataclasses import dataclass
-from datetime import date, timedelta
-from functools import lru_cache
-from pathlib import Path
 
+import affine
 import geopandas
 import numpy
+import odc.stac
 import pandas
-import planetary_computer
+import pystac
 import rasterio
-from affine import Affine
-from odc import stac
-from pystac import Item
-from pystac_client import Client
-from rasterio.features import geometry_mask, rasterize
-from rasterio.warp import Resampling, reproject
-from scipy.ndimage import generic_filter
-from shapely import make_valid
-from shapely.geometry import box, mapping, shape
-from shapely.geometry.base import BaseGeometry
+import rasterio.features
+import rasterio.transform
+import rasterio.warp
+import scipy.ndimage
+import shapely
+import shapely.geometry
+import shapely.geometry.base
 
 import config
 
+# Functions used from other packages (called below with their full module path, e.g. shapely.make_valid).
+#   dataclasses:            dataclass
+#   datetime:               date.fromisoformat, timedelta
+#   functools:              lru_cache
+#   geopandas:              GeoDataFrame, GeoSeries, read_file
+#   math:                   ceil, floor
+#   numpy:                  abs, arange, asarray, count_nonzero, divide, full, isfinite, median,
+#                           mgrid, nan_to_num, nanmedian, zeros
+#   odc.stac:               load
+#   pandas:                 to_datetime
+#   pathlib:                Path
+#   rasterio:               Env, open
+#   rasterio.features:      geometry_mask, rasterize
+#   rasterio.transform:     from_origin
+#   rasterio.warp:          Resampling, reproject
+#   re:                     search
+#   scipy.ndimage:          generic_filter
+#   shapely:                make_valid
+#   shapely.geometry:       box, mapping, shape
+#   time:                   sleep
+#   warnings:               catch_warnings, simplefilter
+# Used only as type annotations: affine.Affine, pystac.Item, shapely.geometry.base.BaseGeometry
 
-@dataclass
+
+@dataclasses.dataclass
 class Inputs:
-    aoi: BaseGeometry
+    aoi: shapely.geometry.base.BaseGeometry
     footprints: geopandas.GeoDataFrame
 
 
-@dataclass
+@dataclasses.dataclass
 class DateResult:
     date: str
     status: str
     message: str
-    scene_items: list[Item]
+    scene_items: list[pystac.Item]
     ndvi: numpy.ndarray | None = None
     contrast: numpy.ndarray | None = None
-    transform: Affine | None = None
+    transform: affine.Affine | None = None
 
     @property
     def scene_count(self):
         return len(self.scene_items)
 
 
+# ---- Inputs ----
+
+
 def load_inputs():
     for path in (config.AOI_FILE, config.FOOTPRINTS_FILE, config.CLUM_RASTER):
-        if not Path(path).exists():
+        if not pathlib.Path(path).exists():
             raise FileNotFoundError(path)
     aoi = geopandas.read_file(config.AOI_FILE, layer=config.AOI_LAYER).to_crs(config.GRID_CRS)
     footprints = geopandas.read_file(
@@ -60,43 +92,26 @@ def load_inputs():
     footprints[config.DATE_FIELD] = pandas.to_datetime(
         footprints[config.DATE_FIELD]
     ).dt.strftime("%Y-%m-%d")
-    aoi_geom = make_valid(aoi.geometry.union_all())
+    aoi_geom = shapely.make_valid(aoi.geometry.union_all())
     footprints = footprints[footprints.geometry.notna()].copy()
-    footprints["geometry"] = footprints.geometry.map(make_valid)
+    footprints["geometry"] = footprints.geometry.map(shapely.make_valid)
     footprints = footprints[footprints.intersects(aoi_geom)].copy()
     return Inputs(aoi_geom, footprints)
 
 
-def acquisition_dates(inputs):
-    dates = sorted(inputs.footprints[config.DATE_FIELD].dropna().astype(str).unique())
-    return [d for d in dates if config.START_DATE <= d < config.END_DATE]
-
-
 def geometry_for_date(inputs, date_string):
     rows = inputs.footprints[inputs.footprints[config.DATE_FIELD] == date_string]
-    return make_valid(rows.geometry.union_all().intersection(inputs.aoi))
+    return shapely.make_valid(rows.geometry.union_all().intersection(inputs.aoi))
 
 
-def open_catalog():
-    return Client.open(config.STAC_URL, modifier=planetary_computer.sign_inplace)
+# ---- Landsat scene search ----
 
 
-def requested_landsat_item(item):
-    if not item.id.startswith(tuple(config.LANDSAT_ID_PREFIXES)):
-        return False
-    if config.REQUIRE_TIER1:
-        category = item.properties.get("landsat:collection_category")
-        if category is not None and str(category).upper() != "T1":
-            return False
-        if category is None and re.search(r"(?:^|_)T1(?:_|$)", item.id, re.IGNORECASE) is None:
-            return False
-    return all(name in item.assets for name in config.REQUIRED_ASSETS)
-
-
+# Called twice in compute_date(): for the first attempt and again before each retry.
 def search_landsat(catalog, date_string, geom):
-    center = date.fromisoformat(date_string)
-    start = center - timedelta(days=config.LANDSAT_WINDOW_DAYS)
-    end = center + timedelta(days=config.LANDSAT_WINDOW_DAYS)
+    center = datetime.date.fromisoformat(date_string)
+    start = center - datetime.timedelta(days=config.LANDSAT_WINDOW_DAYS)
+    end = center + datetime.timedelta(days=config.LANDSAT_WINDOW_DAYS)
     geom_wgs84 = geopandas.GeoSeries([geom], crs=config.GRID_CRS).to_crs("EPSG:4326").iloc[0]
     search = catalog.search(
         collections=[config.STAC_COLLECTION],
@@ -105,66 +120,41 @@ def search_landsat(catalog, date_string, geom):
     )
     items = []
     for item in search.items():
-        if not requested_landsat_item(item):
+        # Keep only the requested scenes: ID prefix, Tier 1 (if required) and all required assets.
+        if not item.id.startswith(tuple(config.LANDSAT_ID_PREFIXES)):
             continue
-        if item.geometry is not None and not make_valid(shape(item.geometry)).intersects(geom_wgs84):
+        if config.REQUIRE_TIER1:
+            category = item.properties.get("landsat:collection_category")
+            if category is not None and str(category).upper() != "T1":
+                continue
+            if category is None and re.search(r"(?:^|_)T1(?:_|$)", item.id, re.IGNORECASE) is None:
+                continue
+        if not all(name in item.assets for name in config.REQUIRED_ASSETS):
+            continue
+        if item.geometry is not None and not shapely.make_valid(
+            shapely.geometry.shape(item.geometry)
+        ).intersects(geom_wgs84):
             continue
         items.append(item)
     return sorted(items, key=lambda x: (x.datetime.timestamp() if x.datetime else float("-inf"), x.id))
 
 
-def load_landsat_stack(items, geom):
-    minx, miny, maxx, maxy = geom.bounds
-    return stac.load(
-        items,
-        bands=list(config.REQUIRED_ASSETS),
-        crs=config.GRID_CRS,
-        resolution=config.SCALE_M,
-        x=(minx, maxx),
-        y=(miny, maxy),
-        groupby="id",
-        resampling={name: "nearest" for name in config.REQUIRED_ASSETS},
-        chunks={"x": config.PROCESSING_TILE_SIZE_PX, "y": config.PROCESSING_TILE_SIZE_PX},
-        fail_on_error=True,
-    )
+# ---- CLUM agricultural mask ----
 
 
-def grid_transform(ds):
-    if hasattr(ds, "odc") and ds.odc.geobox is not None:
-        return ds.odc.geobox.transform
-    x = numpy.asarray(ds.x.values, dtype=float)
-    y = numpy.asarray(ds.y.values, dtype=float)
-    xres = abs(float(x[1] - x[0]))
-    yres = abs(float(y[1] - y[0]))
-    return rasterio.transform.from_origin(
-        float(x.min() - xres / 2),
-        float(y.max() + yres / 2),
-        xres,
-        yres,
-    )
-
-
-def footprint_mask(geom, shape_, transform):
-    return geometry_mask(
-        [mapping(geom)],
-        out_shape=shape_,
-        transform=transform,
-        invert=True,
-        all_touched=False,
-    )
-
-
-@lru_cache(maxsize=1)
+# Cached so the CLUM raster is read from disk once per run, not once per date.
+@functools.lru_cache(maxsize=1)
 def load_clum_source():
-    with rasterio.Env(GDAL_GEOREF_SOURCES="WORLDFILE,PAM,INTERNAL"):
+    with rasterio.Env(GDAL_GEOREF_SOURCES=config.CLUM_GEOREF_SOURCES):
         with rasterio.open(config.CLUM_RASTER) as src:
             return src.read(1), src.transform, src.crs, src.nodata
 
 
+# Called from both median_ndvi() and summarize_cells().
 def clum_mask(shape_, transform):
     source, src_transform, src_crs, src_nodata = load_clum_source()
     destination = numpy.zeros(shape_, dtype=numpy.float32)
-    reproject(
+    rasterio.warp.reproject(
         source=source,
         destination=destination,
         src_transform=src_transform,
@@ -173,16 +163,26 @@ def clum_mask(shape_, transform):
         dst_transform=transform,
         dst_crs=config.GRID_CRS,
         dst_nodata=0,
-        resampling=Resampling.nearest,
+        resampling=rasterio.warp.Resampling.nearest,
     )
     return destination == float(config.CLUM_VALUE)
 
 
+# ---- NDVI and local contrast ----
+
+
+# Per-pixel median NDVI across the scenes, kept only for agricultural pixels inside the footprint.
 def median_ndvi(ds, geom, transform):
     height = int(ds.sizes["y"])
     width = int(ds.sizes["x"])
     shape_ = (height, width)
-    spatial = footprint_mask(geom, shape_, transform) & clum_mask(shape_, transform)
+    spatial = rasterio.features.geometry_mask(
+        [shapely.geometry.mapping(geom)],
+        out_shape=shape_,
+        transform=transform,
+        invert=True,
+        all_touched=False,
+    ) & clum_mask(shape_, transform)
     ndvi = numpy.full(shape_, numpy.nan, dtype=numpy.float32)
 
     size = config.PROCESSING_TILE_SIZE_PX
@@ -197,22 +197,19 @@ def median_ndvi(ds, geom, transform):
             tile = ds[list(config.REQUIRED_ASSETS)].isel(
                 y=slice(y0, y1), x=slice(x0, x1)
             ).compute(scheduler="threads", num_workers=config.IO_THREADS)
-            red_dn = numpy.asarray(tile["red"].values)
-            nir_dn = numpy.asarray(tile["nir08"].values)
-            qa_pixel = numpy.asarray(tile["qa_pixel"].values)
-            qa_radsat = numpy.asarray(tile["qa_radsat"].values)
-            red = red_dn.astype(numpy.float32) * config.SR_SCALE + config.SR_OFFSET
-            nir = nir_dn.astype(numpy.float32) * config.SR_SCALE + config.SR_OFFSET
+
+            # Surface reflectance from the digital numbers; NDVI = (NIR - red) / (NIR + red).
+            red = tile["red"].values.astype(numpy.float32) * config.SR_SCALE + config.SR_OFFSET
+            nir = tile["nir08"].values.astype(numpy.float32) * config.SR_SCALE + config.SR_OFFSET
             denominator = nir + red
 
-            qa_pixel = numpy.nan_to_num(qa_pixel, nan=config.QA_BAD_BITS_0_TO_5).astype(numpy.uint32)
-            qa_radsat = numpy.nan_to_num(qa_radsat, nan=1).astype(numpy.uint32)
+            # Missing QA values count as flagged / saturated, so those pixels are masked out.
+            qa_pixel = numpy.nan_to_num(tile["qa_pixel"].values, nan=config.QA_BAD_BITS_0_TO_5).astype(numpy.uint32)
+            qa_radsat = numpy.nan_to_num(tile["qa_radsat"].values, nan=1).astype(numpy.uint32)
             valid = (
                 ((qa_pixel & config.QA_BAD_BITS_0_TO_5) == 0)
                 & (qa_radsat == 0)
-                & numpy.isfinite(red)
-                & numpy.isfinite(nir)
-                & numpy.isfinite(denominator)
+                & numpy.isfinite(denominator)  # also excludes NaN or infinite red/nir
                 & (numpy.abs(denominator) > 1e-12)
                 & spatial_tile[None, :, :]
             )
@@ -229,25 +226,25 @@ def median_ndvi(ds, geom, transform):
     return ndvi
 
 
-def contrast_footprint():
-    radius_px = config.BACKGROUND_RADIUS_M / config.SCALE_M
-    half = int(math.ceil(radius_px))
-    yy, xx = numpy.mgrid[-half : half + 1, -half : half + 1]
-    footprint = (xx * xx + yy * yy) <= radius_px * radius_px + 1e-9
-    footprint[half, half] = False
-    return footprint
-
-
+# scipy.ndimage.generic_filter needs a callable, so this stays a function. It is used instead of
+# numpy.nanmedian because that is much slower on windows this small.
 def nanmedian(values):
     values = values[numpy.isfinite(values)]
     return numpy.median(values) if values.size else numpy.nan
 
 
 def local_contrast(ndvi):
-    local_median = generic_filter(
+    # Circular neighbourhood of radius BACKGROUND_RADIUS_M around each pixel, excluding the pixel itself.
+    radius_px = config.BACKGROUND_RADIUS_M / config.SCALE_M
+    half = int(math.ceil(radius_px))
+    yy, xx = numpy.mgrid[-half : half + 1, -half : half + 1]
+    footprint = (xx * xx + yy * yy) <= radius_px * radius_px + 1e-9
+    footprint[half, half] = False
+
+    local_median = scipy.ndimage.generic_filter(
         ndvi,
         nanmedian,
-        footprint=contrast_footprint(),
+        footprint=footprint,
         mode="constant",
         cval=numpy.nan,
         output=numpy.float32,
@@ -257,40 +254,43 @@ def local_contrast(ndvi):
     return contrast
 
 
-def c30_column(threshold):
-    return f"c30_{threshold:.2f}_area_fraction".replace(".", "p")
+# ---- Per-cell summaries and the per-date driver ----
 
 
-def aligned_grid_cells(geom):
+# One row per 1 km cell: valid Landsat coverage, and the share of the cell's agricultural pixels
+# (inside the footprint) with C30 at or above each threshold in config.C30_SENSITIVITY_THRESHOLDS.
+def summarize_cells(date_string, geom, ndvi, contrast, transform):
+    # Grid cells aligned to multiples of GRID_SIZE_M, clipped to the footprint geometry.
     size = config.GRID_SIZE_M
-    minx, miny, maxx, maxy = geom.bounds
-    x0 = math.floor(minx / size) * size
-    x1 = math.ceil(maxx / size) * size
-    y0 = math.floor(miny / size) * size
-    y1 = math.ceil(maxy / size) * size
+    geom_minx, geom_miny, geom_maxx, geom_maxy = geom.bounds
+    grid_x0 = math.floor(geom_minx / size) * size
+    grid_x1 = math.ceil(geom_maxx / size) * size
+    grid_y0 = math.floor(geom_miny / size) * size
+    grid_y1 = math.ceil(geom_maxy / size) * size
     cells = []
-    for x in numpy.arange(x0, x1, size):
-        for y in numpy.arange(y0, y1, size):
-            clipped = make_valid(box(x, y, x + size, y + size).intersection(geom))
+    for x in numpy.arange(grid_x0, grid_x1, size):
+        for y in numpy.arange(grid_y0, grid_y1, size):
+            clipped = shapely.make_valid(shapely.geometry.box(x, y, x + size, y + size).intersection(geom))
             if not clipped.is_empty and clipped.area > 0:
                 cells.append((f"T_{int(x)}_{int(y)}", clipped))
-    return cells
-
-
-def summarize_cells(date_string, geom, ndvi, contrast, transform):
-    cells = aligned_grid_cells(geom)
     if not cells:
         return geopandas.GeoDataFrame(geometry=[], crs=config.GRID_CRS)
 
-    cell_ids = rasterize(
-        [(mapping(cell), i + 1) for i, (_, cell) in enumerate(cells)],
+    cell_ids = rasterio.features.rasterize(
+        [(shapely.geometry.mapping(cell), i + 1) for i, (_, cell) in enumerate(cells)],
         out_shape=ndvi.shape,
         transform=transform,
         fill=0,
         dtype="int32",
         all_touched=False,
     )
-    eligible = footprint_mask(geom, ndvi.shape, transform) & clum_mask(ndvi.shape, transform)
+    eligible = rasterio.features.geometry_mask(
+        [shapely.geometry.mapping(geom)],
+        out_shape=ndvi.shape,
+        transform=transform,
+        invert=True,
+        all_touched=False,
+    ) & clum_mask(ndvi.shape, transform)
     records = []
     inv = ~transform
     height, width = ndvi.shape
@@ -323,22 +323,50 @@ def summarize_cells(date_string, geom, ndvi, contrast, transform):
         }
         for threshold in config.C30_SENSITIVITY_THRESHOLDS:
             count = int(numpy.count_nonzero(values >= threshold))
-            record[c30_column(threshold)] = count / agri_n
+            # Column name, e.g. threshold 0.03 -> "c30_0p03_area_fraction".
+            record[f"c30_{threshold:.2f}_area_fraction".replace(".", "p")] = count / agri_n
         records.append(record)
 
     return geopandas.GeoDataFrame(records, geometry="geometry", crs=config.GRID_CRS)
 
 
+# Landsat search, NDVI and C30 for one Pleiades date. The status is NO_SCENES, NO_VALID_PIXELS or OK.
 def compute_date(catalog, inputs, date_string):
     geom = geometry_for_date(inputs, date_string)
     items = search_landsat(catalog, date_string, geom)
     if not items:
         return DateResult(date_string, "NO_SCENES", "No Landsat observations found.", [])
 
+    minx, miny, maxx, maxy = geom.bounds
     for attempt in range(config.ASSET_READ_RETRIES + 1):
         try:
-            ds = load_landsat_stack(items, geom)
-            transform = grid_transform(ds)
+            # Lazily load the scene stack on the 30 m EPSG:3577 grid covering the footprint.
+            ds = odc.stac.load(
+                items,
+                bands=list(config.REQUIRED_ASSETS),
+                crs=config.GRID_CRS,
+                resolution=config.SCALE_M,
+                x=(minx, maxx),
+                y=(miny, maxy),
+                groupby="id",
+                resampling={name: "nearest" for name in config.REQUIRED_ASSETS},
+                chunks={"x": config.PROCESSING_TILE_SIZE_PX, "y": config.PROCESSING_TILE_SIZE_PX},
+                fail_on_error=True,
+            )
+            # Affine transform of the loaded grid (from the odc geobox, else rebuilt from the coordinates).
+            if hasattr(ds, "odc") and ds.odc.geobox is not None:
+                transform = ds.odc.geobox.transform
+            else:
+                x = numpy.asarray(ds.x.values, dtype=float)
+                y = numpy.asarray(ds.y.values, dtype=float)
+                xres = abs(float(x[1] - x[0]))
+                yres = abs(float(y[1] - y[0]))
+                transform = rasterio.transform.from_origin(
+                    float(x.min() - xres / 2),
+                    float(y.max() + yres / 2),
+                    xres,
+                    yres,
+                )
             ndvi = median_ndvi(ds, geom, transform)
             break
         except MemoryError:
@@ -360,8 +388,3 @@ def compute_date(catalog, inputs, date_string):
         contrast=local_contrast(ndvi),
         transform=transform,
     )
-
-
-def write_geojson(gdf, path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    gdf.to_crs("EPSG:4326").to_file(path, driver="GeoJSON")

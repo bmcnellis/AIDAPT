@@ -19,18 +19,6 @@ import shapely.geometry
 
 import config
 
-# Functions used from other packages (called below with their full module path, e.g. shapely.make_valid).
-#   geopandas:          GeoDataFrame, GeoSeries, read_file
-#   math:               ceil, floor
-#   numpy:              arange, isfinite
-#   pandas:             DataFrame, concat, read_csv, to_datetime
-#   rasterio:           Env, open
-#   rasterio.features:  geometry_mask
-#   rasterio.windows:   Window, from_bounds
-#   shapely:            make_valid
-#   shapely.geometry:   box, mapping
-
-
 def main():
     # Column written by module_landsat_contrast.summarize_cells() for each C30 threshold,
     # e.g. 0.03 -> "c30_0p03_area_fraction". The names must match what that function writes.

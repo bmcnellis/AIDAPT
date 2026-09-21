@@ -7,11 +7,6 @@ import pandas
 
 import config
 
-# Functions used from other packages (called below with their full module path, e.g. pandas.concat).
-#   geopandas:  read_file
-#   pandas:     Timestamp, concat, to_datetime
-
-
 def main():
     # The two sampling designs and the season years each one needs. The random order of each design
     # comes from stage1_2_tile_screening.py (<design>_random_order.gpkg).
