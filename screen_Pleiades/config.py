@@ -20,6 +20,7 @@ REQUIRED_ASSETS = ("red", "nir08", "qa_pixel", "qa_radsat")
 # mask, so they count as flagged and are masked out.
 QA_BAD_BITS_0_TO_5 = 0b111111
 
+CLUM_GEOREF_SOURCES = "WORLDFILE,PAM,INTERNAL"
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "inputs"
