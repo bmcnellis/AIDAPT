@@ -2,7 +2,7 @@
 library(dplyr)
 library(ggplot2)
 
-NDVI_result_file <- '../results/NDVI_results_2026-05-25.csv'
+NDVI_result_file <- '../../results/NDVI_results_2026-05-25.csv'
 
 NDVI <- read.csv(NDVI_result_file) |>
   select(name, center_lon, center_lat, year, month, ndvi_mean, ndvi_stdDev, ndvi_median) |>
@@ -42,4 +42,4 @@ for (i in seq_along(unique(NDVI$AOI))) {
   
 }
 
-write.csv(NDVI, '../results/AIDAPT_NDVI_20260505.csv')
+write.csv(NDVI, '../../results/AIDAPT_NDVI_20260505.csv')

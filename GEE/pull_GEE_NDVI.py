@@ -11,7 +11,7 @@ ee.Initialize(project="ee-bmcnellis")
 
 # Local Dependencies
 import GEE_functions
-with open("bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
+with open("../data/bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
     aoi_df = list(csv.DictReader(f))
 
 # Constants/Inits

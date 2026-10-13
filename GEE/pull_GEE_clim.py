@@ -11,7 +11,7 @@ ee.Initialize(project="ee-bmcnellis")
 
 # Local Dependencies
 import GEE_functions
-with open("bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
+with open("../data/bounding_coordinates_30_sites_20260526.csv", "r", newline="") as f:
     aoi_df = list(csv.DictReader(f))
 
 # Constants/Inits
@@ -39,7 +39,13 @@ for name, aoi in aoi_list:
 
     for year in yrs:
         for month in range(1, 13):
-            
+            # TODO: choose the climate collection (ERA5 at 12 km covers the full
+            #       series, TerraClimate at 4-5 km stops before 2025 - see TODO.txt),
+            #       then summarise it for this site-month and append the row here.
+            raise NotImplementedError(
+                "climate pull is not implemented: no collection chosen and no fieldnames defined"
+            )
+
     # write the partial datafiles so that the process can be interrupted
     with open(partial_data_file, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
